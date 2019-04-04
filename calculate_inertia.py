@@ -212,29 +212,44 @@ def plot_scatter(dots):
 
 def procs_parse_sdfgz(filename, procs=1, per_procs=None):
 
-    print("in here")
+    with gzip.open(filename) as f:
+        filetxt = f.read()
 
-    import multiprocessing
-
-    filetxt = gzip.open(filename).read()
     filetxt = filetxt.decode()
     filetxt = filetxt.split("$$$$\n")
 
-    print("hello")
+    results = procs_sdflist(filetxt, procs=procs, per_procs=per_procs)
 
-    N = len(filetxt)
+    return results
+
+
+def procs_parse_sdf(filename, procs=1, per_procs=None):
+
+    with open(filename) as f:
+        filetxt = f.read()
+
+    filetxt = filetxt.split("$$$$\n")
+
+    results = procs_sdflist(filetxt, procs=procs, per_procs=per_procs)
+
+    return results
+
+
+def procs_sdflist(sdf_list, procs=1, per_procs=None):
+
+    import multiprocessing
+
+    N = len(sdf_list)
 
     if per_procs is None:
         per_procs = np.ceil(float(N) / float(procs))
         per_procs = int(per_procs)
 
+    jobs = [sdf_list[line:line+per_procs] for line in range(0, N, per_procs)]
+
+    del sdf_list
+
     pool = multiprocessing.Pool(processes=procs)
-    print("wat")
-
-    jobs = [filetxt[line:line+per_procs] for line in range(0, N, per_procs)]
-
-    del filetxt
-
     results_out = pool.map(worker_sdfstr, jobs)
     results_flat = [item for sublist in results_out for item in sublist]
 
@@ -252,6 +267,7 @@ def worker_sdfstr(lines):
         if molobj is None: continue
 
         inertia = parse_molobj(molobj)
+        # ratio = get_ratio(inertia)
 
         result.append(inertia)
 
@@ -268,13 +284,13 @@ def main():
 
     if args.procs > 1:
 
-        generator = procs_parse_sdfgz(args.filename, procs=args.procs)
+        generator = procs_parse_sdf(args.filename, procs=args.procs)
 
     elif args.filename:
         generator = parse_filename(args.filename)
 
-    for inertia in generator:
-        print(*inertia)
+    for result in generator:
+        print(*result)
 
     return
 
