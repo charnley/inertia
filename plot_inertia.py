@@ -1,6 +1,7 @@
 
 import matplotlib.pyplot as plt
 
+import calculate_inertia as cain
 
 
 def main():
