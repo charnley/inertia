@@ -52,8 +52,15 @@ def molobj_optimize(molobj):
 
     return status
 
+def molobj_conformers(molobj, n_conformers):
 
-def molobj_to_xyz(molobj, atom_type="int"):
+    AllChem.EmbedMultipleConfs(molobj, numConfs=n_conformers,
+        useExpTorsionAnglePrefs=True,
+        useBasicKnowledge=True)
+
+    return molobj.GetConformers()
+
+def molobj_to_xyz(molobj, atom_type="int", conformations=None):
     """
     rdkit molobj to xyz
     """
@@ -216,14 +223,65 @@ def smiles_to_molobj(smilesstr, add_hydrogens=True):
     SMILES to molobj converter
     """
 
-    sio = sys.stderr = StringIO()
     mol = Chem.MolFromSmiles(smilesstr)
 
     if mol is None:
-        return None, sio.getvalue()
+        return None, ""
 
     if add_hydrogens:
         mol = Chem.AddHs(mol)
 
-    return molobj, ""
+    return mol, ""
 
+def main():
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--filename', type=str, help="")
+    parser.add_argument('-s', '--smiles', type=str, help="")
+
+    parser.add_argument('--sdf', action="store_true")
+    parser.add_argument('--svg', action="store_true")
+
+    args = parser.parse_args()
+
+    if args.smiles:
+        molobj, status = smiles_to_molobj(args.smiles)
+        molobj_optimize(molobj)
+
+    if args.filename:
+
+        # suppl = Chem.SDMolSupplier(args.filename,
+        #     removeHs=False,
+        #     sanitize=True)
+        # molobjs = [x for x in suppl]
+
+        with open(args.filename) as f:
+
+            smiles_list = [x.strip() for x in f]
+
+            molobjs = list()
+
+            for i, x in enumerate(smiles_list):
+
+                molobj, status = smiles_to_molobj(x)
+
+                if molobj is None: continue
+
+                if i > 50:
+                    break
+
+                molobjs.append(molobj)
+
+
+    if args.svg:
+        img = Draw.MolsToGridImage(molobjs,molsPerRow=4,subImgSize=(200,200))
+        img.save('fig_smi.png')
+
+    if args.sdf:
+        sdfstr = molobj_to_sdfstr(molobj)
+        print(sdfstr)
+
+
+if __name__ == "__main__":
+    main()

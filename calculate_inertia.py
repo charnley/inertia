@@ -11,6 +11,7 @@ import rdkit.Chem.AllChem as AllChem
 
 import matplotlib.pyplot as plt
 
+import numpy.linalg as linalg
 
 def center_of_mass(atoms, coordinates):
 
@@ -31,6 +32,54 @@ def center_of_mass(atoms, coordinates):
 
 
 def get_inertia(atoms, coordinates):
+
+    com = center_of_mass(atoms, coordinates)
+
+    coordinates -= com
+
+    X = coordinates[:,0]
+    Y = coordinates[:,1]
+    Z = coordinates[:,2]
+
+    rxx = Y**2 + Z**2
+    ryy = X**2 + Z**2
+    rzz = X**2 + Y**2
+
+    Ixx = atoms*rxx
+    Iyy = atoms*ryy
+    Izz = atoms*rzz
+
+    Ixy = atoms*Y*X
+    Ixz = atoms*X*Z
+    Iyz = atoms*Y*Z
+
+    Ixx = np.sum(Ixx)
+    Iyy = np.sum(Iyy)
+    Izz = np.sum(Izz)
+
+    Ixy = np.sum(Ixy)
+    Ixz = np.sum(Ixz)
+    Iyz = np.sum(Iyz)
+
+    inertia = np.zeros((3,3))
+
+    inertia[0,0] = Ixx
+    inertia[1,1] = Iyy
+    inertia[2,2] = Izz
+
+    inertia[0,1] = -Ixy
+    inertia[1,0] = -Ixy
+    inertia[0,2] = -Ixz
+    inertia[2,0] = -Ixz
+    inertia[1,2] = -Iyz
+    inertia[2,1] = -Iyz
+
+    w, v = linalg.eig(inertia)
+
+    return w
+
+
+def get_inertia_diag(atoms, coordinates):
 
     com = center_of_mass(atoms, coordinates)
 
@@ -83,6 +132,24 @@ def generate_structure(smiles):
 def parse_molobj(molobj):
 
     atoms, coordinates = cheminfo.molobj_to_xyz(molobj)
+    inertia = get_inertia(atoms, coordinates)
+
+    conformers = cheminfo.molobj_conformers(molobj, 1000)
+
+    for conformer in conformers:
+        coordinates = conformer.GetPositions()
+        coordinates = np.array(coordinates)
+        inertia = get_inertia(atoms, coordinates)
+
+        print(*inertia)
+
+
+    return inertia
+
+
+def parse_xyz(filename):
+
+    atoms, coordinates = rmsd.get_coordinates_xyz(filename)
 
     inertia = get_inertia(atoms, coordinates)
 
@@ -163,6 +230,9 @@ def parse_smigz(filename, sep=None, idx=0):
             if molobj is None: continue
 
             inertia = parse_molobj(molobj)
+
+            # TODO for all parsers
+            if sum(inertia) == 0: continue
 
             yield inertia
 
