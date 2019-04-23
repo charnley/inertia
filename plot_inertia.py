@@ -157,9 +157,12 @@ def main():
     # cb = plt.colorbar(hb)
     # cb.set_label('log10(N)')
 
-    plt.scatter(X, Y, zorder=2, s=0.01)
+    plt.scatter(X, Y, zorder=2, s=0.01, color="k")
 
-    plt.savefig("fig_inertia_his")
+    name = args.filename.split(".")
+    name = ".".join(name[:-1])
+    print(name)
+    plt.savefig("tmp_fig_inhis_"+name)
 
     return
 
