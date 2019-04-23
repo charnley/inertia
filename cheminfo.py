@@ -11,6 +11,7 @@ import numpy as np
 
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
+import rdkit.Chem.ChemicalForceFields as ChemicalForceFields
 import rdkit.Chem.Draw as Draw
 
 Chem.WrapLogs()
@@ -49,6 +50,14 @@ def molobj_optimize(molobj):
 
     status = AllChem.EmbedMolecule(molobj)
     status = AllChem.UFFOptimizeMolecule(molobj)
+
+    return status
+
+def molobj_optimize_mmff(molobj, steps=1000):
+
+    ffprop_mmff = ChemicalForceFields.MMFFGetMoleculeProperties(molobj)
+    forcefield = ChemicalForceFields.MMFFGetMoleculeForceField(molobj, ffprop_mmff)
+    status = forcefield.Minimize(maxIts=steps, energyTol=1e-3, forceTol=1e-3)
 
     return status
 

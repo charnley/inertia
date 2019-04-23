@@ -256,18 +256,32 @@ def procs_sdflist(sdf_list, procs=1, per_procs=None):
     return results_flat
 
 
-def worker_sdfstr(lines):
+def worker_sdfstr(lines, append_smiles=True, add_hydrogen=True, optimize=True):
 
     result = []
 
     for line in lines:
 
-        molobj = Chem.MolFromMolBlock(line)
-
+        molobj = Chem.MolFromMolBlock(line, removeHs=False)
         if molobj is None: continue
+
+        if add_hydrogen:
+            molobj = Chem.AddHs(molobj)
+            if molobj is None: continue
+
+        if optimize:
+            try:
+                status = cheminfo.molobj_optimize(molobj)
+            except:
+                continue
+
 
         inertia = parse_molobj(molobj)
         # ratio = get_ratio(inertia)
+
+        if append_smiles:
+            smi = Chem.MolToSmiles(molobj)
+            inertia = [smi] + list(inertia)
 
         result.append(inertia)
 
