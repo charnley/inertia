@@ -162,10 +162,14 @@ def parse_molobj_conf(molobj, nconf=1000, dumpcoord=False):
         f.close()
 
 
-def clear_molobj(molobj):
+def clear_molobj(molobj, add_hydrogens=True, optimize=False):
 
     smiles = cheminfo.molobj_to_smiles(molobj)
     molobj, status = cheminfo.smiles_to_molobj(smiles)
+
+    if molobj is None:
+        return None
+
     conformers = cheminfo.molobj_conformers(molobj, 1)
 
     if add_hydrogens:
@@ -173,6 +177,14 @@ def clear_molobj(molobj):
 
     if optimize:
         status = cheminfo.molobj_optimize_mmff(molobj)
+        if status > 0:
+            return None
+
+    try:
+        molobj.GetConformer()
+
+    except ValueError:
+        return None
 
     return molobj
 
@@ -341,8 +353,6 @@ def procs_parse_sdf(filename, procs=1, per_procs=None):
 
     results = procs_sdflist(filetxt, procs=procs, per_procs=per_procs)
 
-    print(results)
-
     return results
 
 
@@ -374,6 +384,11 @@ def worker_sdfstr(lines, append_smiles=False, add_hydrogen=True, optimize=True):
     for line in lines:
 
         molobj = Chem.MolFromMolBlock(line, removeHs=False)
+
+        if molobj is None: continue
+
+        molobj = clear_molobj(molobj)
+
         if molobj is None: continue
 
         # if add_hydrogen:
@@ -385,7 +400,6 @@ def worker_sdfstr(lines, append_smiles=False, add_hydrogen=True, optimize=True):
         #         status = cheminfo.molobj_optimize(molobj)
         #     except:
         #         continue
-
 
         inertia = parse_molobj(molobj)
 
