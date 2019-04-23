@@ -1,8 +1,9 @@
 
+import rmsd
+
 import sys
 
 import gzip
-import rmsd
 import numpy as np
 import cheminfo
 
@@ -11,6 +12,7 @@ import rdkit.Chem.AllChem as AllChem
 
 import matplotlib.pyplot as plt
 
+import numpy.linalg as linalg
 
 def center_of_mass(atoms, coordinates):
 
@@ -31,6 +33,54 @@ def center_of_mass(atoms, coordinates):
 
 
 def get_inertia(atoms, coordinates):
+
+    com = center_of_mass(atoms, coordinates)
+
+    coordinates -= com
+
+    X = coordinates[:,0]
+    Y = coordinates[:,1]
+    Z = coordinates[:,2]
+
+    rxx = Y**2 + Z**2
+    ryy = X**2 + Z**2
+    rzz = X**2 + Y**2
+
+    Ixx = atoms*rxx
+    Iyy = atoms*ryy
+    Izz = atoms*rzz
+
+    Ixy = atoms*Y*X
+    Ixz = atoms*X*Z
+    Iyz = atoms*Y*Z
+
+    Ixx = np.sum(Ixx)
+    Iyy = np.sum(Iyy)
+    Izz = np.sum(Izz)
+
+    Ixy = np.sum(Ixy)
+    Ixz = np.sum(Ixz)
+    Iyz = np.sum(Iyz)
+
+    inertia = np.zeros((3,3))
+
+    inertia[0,0] = Ixx
+    inertia[1,1] = Iyy
+    inertia[2,2] = Izz
+
+    inertia[0,1] = -Ixy
+    inertia[1,0] = -Ixy
+    inertia[0,2] = -Ixz
+    inertia[2,0] = -Ixz
+    inertia[1,2] = -Iyz
+    inertia[2,1] = -Iyz
+
+    w, v = linalg.eig(inertia)
+
+    return w
+
+
+def get_inertia_diag(atoms, coordinates):
 
     com = center_of_mass(atoms, coordinates)
 
@@ -80,6 +130,39 @@ def generate_structure(smiles):
     return molobj
 
 
+def parse_molobj_conf(molobj, nconf=1000, dumpcoord=False):
+
+    atoms, coordinates = cheminfo.molobj_to_xyz(molobj)
+
+    print("generating confs")
+
+    conformers = cheminfo.molobj_conformers(molobj, nconf)
+
+    print("generating confs, done")
+
+    inertias = []
+
+    atomsstr = [str(atom) for atom in atoms]
+    dumpxyz = []
+
+    for conformer in conformers:
+        coordinates = conformer.GetPositions()
+        coordinates = np.array(coordinates)
+        inertia = get_inertia(atoms, coordinates)
+
+        if dumpcoord:
+            dumpxyz.append(rmsd.set_coordinates(atomsstr, coordinates))
+
+        yield inertia
+
+    if dumpcoord:
+        dumpxyz = "\n".join(dumpxyz)
+        f = open("dump.xyz", 'w')
+        f.write(dumpxyz)
+        f.close()
+
+
+
 def parse_molobj(molobj):
 
     atoms, coordinates = cheminfo.molobj_to_xyz(molobj)
@@ -89,7 +172,16 @@ def parse_molobj(molobj):
     return inertia
 
 
-def parse_sdf(filename):
+def parse_xyz(filename):
+
+    atoms, coordinates = rmsd.get_coordinates_xyz(filename)
+
+    inertia = get_inertia(atoms, coordinates)
+
+    return inertia
+
+
+def parse_sdf(filename, nconf=1):
 
     suppl = Chem.SDMolSupplier(filename,
         removeHs=False,
@@ -97,11 +189,17 @@ def parse_sdf(filename):
 
     for molobj in suppl:
 
-        if molobj is None: continue
+        if molobj is None:
+            continue
 
-        inertia = parse_molobj(molobj)
+        if nconf is None:
+            inertia = parse_molobj(molobj)
+            yield inertia
 
-        yield inertia
+        else:
+            inertias = parse_molobj_conf(molobj, nconf=nconf)
+            for inertia in inertias:
+                yield inertia
 
 
 def parse_sdfgz(filename):
@@ -167,7 +265,7 @@ def parse_smigz(filename, sep=None, idx=0):
             yield inertia
 
 
-def parse_filename(filename):
+def parse_filename(filename, nconf=None, **kwargs):
 
     fileext = filename.split(".")
 
@@ -175,6 +273,7 @@ def parse_filename(filename):
         fileext = ".".join(fileext[-2:])
     else:
         fileext = fileext[-1]
+
 
     if fileext == "sdf.gz":
 
@@ -186,7 +285,7 @@ def parse_filename(filename):
 
     elif fileext == "sdf":
 
-        generator = parse_sdf(filename)
+        generator = parse_sdf(filename, nconf=nconf)
 
     elif fileext == "smi":
 
@@ -198,16 +297,6 @@ def parse_filename(filename):
         quit()
 
     return generator
-
-
-def plot_scatter(dots):
-
-    X = [0, 0.5, 1, 0]
-    Y = [1, 0.5, 1, 1]
-    plt.plot(X, Y)
-    plt.plot(dots, "k.")
-
-    return
 
 
 def procs_parse_sdfgz(filename, procs=1, per_procs=None):
@@ -277,7 +366,6 @@ def worker_sdfstr(lines, append_smiles=True, add_hydrogen=True, optimize=True):
 
 
         inertia = parse_molobj(molobj)
-        # ratio = get_ratio(inertia)
 
         if append_smiles:
             smi = Chem.MolToSmiles(molobj)
@@ -294,16 +382,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--filename', type=str, help="Calculate inertia of filename.{.sdf.gz,.smi.gz,.sdf,smi}")
     parser.add_argument('-j', '--procs', type=int, help="Use subprocess to run over more cores", default=1)
+    parser.add_argument('--ratio', action="store_true", help="calculate ratio")
+    parser.add_argument('--nconf', type=int, help="how many conformers per compound", default=1)
     args = parser.parse_args()
 
     if args.procs > 1:
-
         generator = procs_parse_sdf(args.filename, procs=args.procs)
 
     elif args.filename:
-        generator = parse_filename(args.filename)
+        generator = parse_filename(args.filename, nconf=args.nconf)
 
     for result in generator:
+
+        if args.ratio:
+            result = get_ratio(result)
+            fmt = "{:5.3f}"
+        else:
+            fmt = "{:15.8f}"
+
+        result = [fmt.format(x) for x in result]
+
         print(*result)
 
     return
