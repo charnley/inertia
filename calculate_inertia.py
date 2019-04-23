@@ -162,10 +162,30 @@ def parse_molobj_conf(molobj, nconf=1000, dumpcoord=False):
         f.close()
 
 
+def clear_molobj(molobj):
 
-def parse_molobj(molobj):
+    smiles = cheminfo.molobj_to_smiles(molobj)
+    molobj, status = cheminfo.smiles_to_molobj(smiles)
+    conformers = cheminfo.molobj_conformers(molobj, 1)
+
+    if add_hydrogens:
+        molobj = Chem.AddHs(molobj)
+
+    if optimize:
+        status = cheminfo.molobj_optimize_mmff(molobj)
+
+    return molobj
+
+
+def parse_molobj(molobj, optimize=False, add_hydrogens=True):
 
     atoms, coordinates = cheminfo.molobj_to_xyz(molobj)
+
+    # dxyz = rmsd.set_coordinates([str(atom) for atom in atoms], coordinates)
+    # f = open("dump.xyz", 'a+')
+    # f.write(dxyz)
+    # f.write("\n")
+    # f.close()
 
     inertia = get_inertia(atoms, coordinates)
 
@@ -321,6 +341,8 @@ def procs_parse_sdf(filename, procs=1, per_procs=None):
 
     results = procs_sdflist(filetxt, procs=procs, per_procs=per_procs)
 
+    print(results)
+
     return results
 
 
@@ -345,7 +367,7 @@ def procs_sdflist(sdf_list, procs=1, per_procs=None):
     return results_flat
 
 
-def worker_sdfstr(lines, append_smiles=True, add_hydrogen=True, optimize=True):
+def worker_sdfstr(lines, append_smiles=False, add_hydrogen=True, optimize=True):
 
     result = []
 
@@ -354,15 +376,15 @@ def worker_sdfstr(lines, append_smiles=True, add_hydrogen=True, optimize=True):
         molobj = Chem.MolFromMolBlock(line, removeHs=False)
         if molobj is None: continue
 
-        if add_hydrogen:
-            molobj = Chem.AddHs(molobj)
-            if molobj is None: continue
-
-        if optimize:
-            try:
-                status = cheminfo.molobj_optimize(molobj)
-            except:
-                continue
+        # if add_hydrogen:
+        #     molobj = Chem.AddHs(molobj)
+        #     if molobj is None: continue
+        #
+        # if optimize:
+        #     try:
+        #         status = cheminfo.molobj_optimize(molobj)
+        #     except:
+        #         continue
 
 
         inertia = parse_molobj(molobj)
@@ -383,7 +405,13 @@ def main():
     parser.add_argument('-f', '--filename', type=str, help="Calculate inertia of filename.{.sdf.gz,.smi.gz,.sdf,smi}")
     parser.add_argument('-j', '--procs', type=int, help="Use subprocess to run over more cores", default=1)
     parser.add_argument('--ratio', action="store_true", help="calculate ratio")
-    parser.add_argument('--nconf', type=int, help="how many conformers per compound", default=1)
+    parser.add_argument('--nconf', type=int, help="how many conformers per compound", default=None)
+
+    parser.add_argument('--prepend-smiles', action="store_true", help="")
+
+    # TODO re-generate 3D coordinates from SDF (for chembl database)
+    # sdf -> molobj -> smiles -> molobj -> add h -> inertia
+
     args = parser.parse_args()
 
     if args.procs > 1:
@@ -401,8 +429,6 @@ def main():
             fmt = "{:15.8f}"
 
         result = [fmt.format(x) for x in result]
-
-        print(*result)
 
     return
 
