@@ -1,115 +1,183 @@
 
-import numpy as np
+import copy
 
 import matplotlib.pyplot as plt
+import numpy as np
+import rmsd
 from matplotlib.ticker import NullFormatter
 from scipy.stats import gaussian_kde
 
-import calculate_inertia as cain
 
+def save_figure(filename, fig=None):
 
-def histo_view(xvalues, yvalues,
-        filename="overview_scathis",
-        x_binwidth=None,
-        y_binwidth=None,
-        debug=False):
+    if fig is None:
 
-    from matplotlib import rc
+        plt.savefig(filename + ".png", bbox_inches="tight")
+        plt.savefig(filename + ".pdf", bbox_inches="tight")
 
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='serif')
-    plt.rc('font', size=18)
+    else:
 
-    nullfmt = NullFormatter()
-
-    left, width = 0.1, 0.65
-    bottom, height = 0.1, 0.65
-    bottom_h = left_h = left + width + 0.02
-
-    rect_scatter = [left, bottom, width, height]
-    rect_histx = [left, bottom_h, width, 0.1]
-    rect_histy = [left_h, bottom, 0.1, height]
-
-    plt.figure(1, figsize=(8, 8))
-
-    ax_scatter = plt.axes(rect_scatter)
-    ax_histx = plt.axes(rect_histx)
-    ax_histy = plt.axes(rect_histy)
-
-
-    # scatter plot
-    # ax_scatter.scatter(xvalues, yvalues, color="k", alpha=0.4)
-    hb = ax_scatter.hexbin(xvalues, yvalues, gridsize=40, bins='log', cmap='Greys')
-
-    plt.savefig(filename, bbox_inches="tight")
-    plt.savefig(filename + ".pdf", bbox_inches="tight")
+        fig.savefig(filename + ".png", bbox_inches="tight")
+        fig.savefig(filename + ".pdf", bbox_inches="tight")
 
     return
 
-    # define binwidth
-    x_max = np.max(xvalues)
-    x_min = np.min(xvalues)
-    x_binwidth = (abs(x_min) + x_max) / 30.0
-    x_binwidth = int(x_binwidth)
-    x_binwidth = 1
-    x_bins = np.arange(x_min, x_max+x_binwidth, x_binwidth)
 
-    y_max = np.max(yvalues)
-    y_min = np.min(yvalues)
-    y_binwidth = (abs(y_min) + y_max) / 50.0
-    y_binwidth = int(y_binwidth)
-    y_bins = np.arange(y_min, y_max+y_binwidth, y_binwidth)
+def get_ratio(inertia):
 
-    # xlim = (x_min-x_binwidth, x_max+x_binwidth)
-    # ylim = (y_min-y_binwidth, y_max+y_binwidth)
+    inertia.sort()
 
-    # Set limits and ticks of scatter
-    # ax_scatter.set_xlim(xlim)
-    # ax_scatter.set_ylim(ylim)
+    ratio = np.zeros(2)
+    ratio[0] = inertia[0]/inertia[2]
+    ratio[1] = inertia[1]/inertia[2]
 
-    xkeys = np.arange(10, x_max+x_binwidth*2, 10)
-    xkeys = [1] + list(xkeys)
-    ykeys = np.arange(0, y_max+y_binwidth, 100)
+    return ratio
 
-    # Histogram
 
-    bins = np.linspace(x_min, x_max, 200)
+def get_gaussian_kernel(xvalues):
+
+    bins = np.linspace(0.0,1.0, 200)
     gaussian_kernel = gaussian_kde(xvalues)
     values = gaussian_kernel(bins)
-    ax_histx.plot(bins, values, "k", linewidth=1.0)
 
-    bins = np.linspace(y_min, y_max, 200)
-    gaussian_kernel = gaussian_kde(yvalues)
-    values = gaussian_kernel(bins)
-    ax_histy.plot(values, bins, "k", linewidth=1.0)
-
-    # ax_histx.hist(xvalues, bins=x_bins, histtype='step', color="k")
-    # ax_histy.hist(yvalues, bins=y_bins, orientation='horizontal', histtype='step', color="k")
-
-    ax_histx.set_xlim(ax_scatter.get_xlim())
-    ax_histy.set_ylim(ax_scatter.get_ylim())
-
-    # pretty
-    if not debug:
-        ax_histx.xaxis.set_major_formatter(nullfmt)
-        ax_histy.yaxis.set_major_formatter(nullfmt)
-
-        set_border(ax_scatter, xkeys, ykeys)
-        set_border(ax_histx, [], [], border=[False, False, False, False])
-        set_border(ax_histy, [], [], border=[False, False, False, False])
-
-        ax_histx.set_xticks([], [])
-        ax_histy.set_yticks([], [])
+    return bins, values
 
 
-    # ax_scatter.set_xlabel("Heavy atoms")
-    # ax_scatter.set_ylabel("Kelvin")
+def rotation_matrix(sigma):
+    """
+    https://en.wikipedia.org/wiki/Rotation_matrix
+    """
 
-    plt.savefig(filename, bbox_inches="tight")
-    plt.savefig(filename + ".pdf", bbox_inches="tight")
+    radians = sigma * np.pi / 180.0
+
+    r11 = np.cos(radians)
+    r12 = -np.sin(radians)
+    r21 = np.sin(radians)
+    r22 = np.cos(radians)
+
+    R = np.array([[r11, r12], [r21, r22]])
+
+    return R
+
+
+def scale_triangle_with_kde(xvalues, yvalues, filename="_istwk"):
+
+
+    fig_kde, axes_kde = plt.subplots(3, sharex=True, sharey=True)
+    fig_his, ax_his = plt.subplots(1)
+
+    # define edges
+    sphere = np.array([1, 1])
+    rod = np.array([0, 1])
+    disc = np.array([0.5, scale_func(0.5)])
+    sphere = sphere[np.newaxis]
+    rod = rod[np.newaxis]
+    disc = disc[np.newaxis]
+
+    # define and scale coord for distances to sphere
+    yvalues_scale = scale_func(copy.deepcopy(yvalues))
+    coord = np.array([xvalues, yvalues_scale])
+
+    linewidth=0.9
+
+    dots = [sphere, rod, disc]
+    names = ["Sphere", "Rod", "Disc"]
+
+    for ax, dot, name in zip(axes_kde, dots, names):
+
+        dist = distance(coord, dot.T)
+        bins, values = get_gaussian_kernel(dist)
+        ax.plot(bins, values, "k", linewidth=linewidth, label=name)
+
+        ax.text(0.045,0.75,name,
+            horizontalalignment='left',
+            transform=ax.transAxes)
+
+        ax.get_yaxis().set_visible(False)
+
+    ax = axes_kde[-1]
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["is shape", "not shape"])
+
+    # prettify
+    fig_kde.subplots_adjust(hspace=0)
+
+    # save
+    save_figure(filename+"_kde", fig=fig_kde)
+
+    # His
+    nbins = 100
+    H, xedges, yedges = np.histogram2d(xvalues, yvalues, bins=nbins)
+    H = np.rot90(H)
+    H = np.flipud(H)
+
+    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+
+    pc = ax_his.pcolormesh(xedges,yedges,Hmasked, cmap="PuRd")
+    ax_his.set_aspect('equal')
+
+    ax_his.get_yaxis().set_visible(False)
+    ax_his.get_xaxis().set_visible(False)
+    ax_his.spines['top'].set_visible(False)
+    ax_his.spines['right'].set_visible(False)
+    ax_his.spines['bottom'].set_visible(False)
+    ax_his.spines['left'].set_visible(False)
+
+    ax_his.set_ylim([0.5-0.05, 1.05])
+    ax_his.set_xlim([0.0-0.05, 1.0+0.05])
+
+    max_count = np.max(H)
+    max_count /= 10
+    max_count = np.floor(max_count)
+    max_count *= 10
+
+    cb_ticks = np.linspace(1, max_count, 3, dtype=int)
+    # cb_ticks = [1, max_count]
+
+    cb = fig_his.colorbar(pc, orientation="horizontal", ax=ax_his, ticks=cb_ticks, pad=0.05)
+    cb.outline.set_edgecolor('white')
+
+
+    # prettify
+    ax_his.text(1.0, 1.02, "Sphere (1,1)",
+        horizontalalignment='center')
+    ax_his.text(0.0, 1.02, "Rod (0,1)",
+        horizontalalignment='center')
+    ax_his.text(0.5, 0.5- 0.04, "Disc (0.5,0.5)",
+        horizontalalignment='center')
+
+    save_figure(filename + "_his", fig=fig_his)
 
     return
 
+
+def scale_func(Y):
+    """
+
+    scale
+    1.0 - 0.5
+    too
+    1.0 - 0.8660254037844386
+
+    """
+
+    target_y = 0.133975
+    factor_y = 1.0 + ( -target_y)/0.5
+
+    diff = Y - 1.0
+    add = diff*factor_y
+    Y += add
+
+    return Y
+
+
+def distance(coord, dot):
+    dist = coord - dot
+    dist = dist**2
+    dist = np.sum(dist, axis=0)
+    dist = np.sqrt(dist)
+
+    return dist
 
 
 def main():
@@ -119,11 +187,138 @@ def main():
     parser.add_argument('-f', '--filename', type=str, help="csv")
     args = parser.parse_args()
 
+    # get name
+    name = args.filename.split(".")
+    name = ".".join(name[:-1])
+
+    # Read csvfile
+    f = open(args.filename)
+
+    X = []
+    Y = []
+
+    for i, line in enumerate(f):
+
+        line = line.split()
+
+        if len(line) > 3:
+            smi = line[0]
+            line = line[1:]
+
+        line = [float(x) for x in line]
+        line = np.array(line)
+        ratio = get_ratio(line)
+
+        if sum(line) == 0:
+            print("zero sum", i+1)
+            continue
+
+        X.append(ratio[0])
+        Y.append(ratio[1])
+
+    X = np.array(X)
+    Y = np.array(Y)
+
+
+    # what to dooo
+    scale_triangle_with_kde(X, Y, filename=name)
+
+
+
+
+    return
+
+
+def test():
+
+    name = args.filename.split(".")
+    name = ".".join(name[:-1])
+    print(name)
 
     # Triangle
     X = [0, 0.5, 1, 0]
     Y = [1, 0.5, 1, 1]
-    plt.plot(X, Y, linewidth=0.5)
+    tri = [X, Y]
+    tri = np.array(tri)
+    # plt.plot(X, Y, linewidth=0.5, color="grey")
+
+    X = [0, 0.5, 1]
+    Y = [1.0, 0.5, 1.0]
+    R = np.array([X, Y]).T
+
+
+    cent_tri = rmsd.centroid(R)
+    print(cent_tri)
+
+    X = np.array(X)
+    Y = np.array(Y)
+
+
+
+    Y = scale_func(Y)
+
+    print("scale")
+    print(Y)
+
+    coord = np.array([X, Y]).T
+    plt.plot(X, Y, "rx")
+
+    cent_tri = rmsd.centroid(coord)
+    print("center:", cent_tri)
+
+    plt.plot(*cent_tri, "ko")
+    plt.plot(X, Y)
+
+    sphere = np.array([1, 1])
+    rod = np.array([0, 1])
+    disc = np.array([0.5, scale_func(0.5)])
+
+    plt.plot(*sphere, "o")
+
+
+    dist = distance(cent_tri, sphere)
+    dist = distance(cent_tri, rod)
+    dist = distance(cent_tri, disc)
+
+    # plt.ylim([0.0, 1.0])
+    # plt.xlim([0.0, 1.0])
+    # plt.savefig("test")
+
+
+    # tri = tri.T
+    # tri -= cent_tri
+    # tri = np.dot(tri, rotation_matrix(45.0))
+    # tri += cent_tri
+
+    # print(max(tri[0]))
+    # print(min(tri[0]))
+    #
+    # plt.plot(*tri.T, "g-")
+
+
+    # rotate example
+    # dot_to_rot = [[1.0], [1.0]]
+    # dot_to_rot = np.array(dot_to_rot)
+    #
+    # plt.plot(*dot_to_rot, "r.")
+    # dot_to_rot = dot_to_rot.T
+    # dot_to_rot -= cent_tri
+    #
+    # dot_to_rot = np.dot(dot_to_rot, rotation_matrix(30))
+    # dot_to_rot += cent_tri
+    #
+    # plt.plot(*dot_to_rot.T, "g.")
+
+
+
+    # sphere = np.array([[1],[1]])
+    # dist = R - sphere
+    # dist = dist**2
+    # dist = np.sum(dist, axis=0)
+    # dist = np.sqrt(dist)
+    # print(dist)
+
+
 
     f = open(args.filename)
 
@@ -140,7 +335,7 @@ def main():
 
         line = [float(x) for x in line]
         line = np.array(line)
-        ratio = cain.get_ratio(line)
+        ratio = get_ratio(line)
 
         # if np.abs(ratio[0] - 0) < 0.01 and \
         #     np.abs(ratio[1] - 1) < 0.01:
@@ -153,20 +348,108 @@ def main():
         X.append(ratio[0])
         Y.append(ratio[1])
 
+
+    X = np.array(X)
+    Y = np.array(Y)
+
+
+    Y = scale_func(Y)
+
+    coord = np.array([X, Y])
+
+    sphere = sphere[np.newaxis]
+    rod = rod[np.newaxis]
+    disc = disc[np.newaxis]
+
+
+    plt.clf()
+    dist = distance(coord, sphere.T)
+    bins, values = get_gaussian_kernel(dist)
+    plt.plot(bins, values, linewidth=1.0, label="sphere")
+
+    dist = distance(coord, rod.T)
+    bins, values = get_gaussian_kernel(dist)
+    plt.plot(bins, values, linewidth=1.0, label="rod")
+
+    dist = distance(coord, disc.T)
+    bins, values = get_gaussian_kernel(dist)
+    plt.plot(bins, values, linewidth=1.0, label="disc")
+
+    plt.legend(loc="best")
+
+    plt.savefig("tmp_fig_kde_dist_"+name + ".png")
+    plt.clf()
+
+
+
     # hb = plt.hexbin(X, Y, gridsize=70, cmap='gist_heat_r', zorder=2)
     # cb = plt.colorbar(hb)
     # cb.set_label('log10(N)')
 
-    plt.scatter(X, Y, zorder=2, s=0.01, color="k")
+    # plt.style.use('seaborn-white')
 
-    name = args.filename.split(".")
-    name = ".".join(name[:-1])
-    print(name)
-    plt.savefig("tmp_fig_inhis_"+name)
+
+    # C = np.array([X, Y])
+    # C = C.T
+    # C -= cent_tri
+    # C = np.dot(C, rotation_matrix(-45))
+    # C += cent_tri
+    # C = C.T
+    # X, Y = C
+
+
+    # View disc-rod histogram
+    # idx_view, = np.where(Y < 0.61)
+    # print(idx_view)
+    # X = X[idx_view]
+    # Y = Y[idx_view]
+
+
+
+    # fucks up my plot tho
+    # plt.hist2d(X, Y, bins=30, cmap='Blues')
+    # cb = plt.colorbar()
+    # cb.set_label('counts in bin')
+
+    # plt.scatter(X, Y, zorder=2, s=0.01, color="k")
+
+
+    # Estimate the 2D histogram
+    nbins = 100
+    H, xedges, yedges = np.histogram2d(X, Y, bins=nbins)
+    H = np.rot90(H)
+    H = np.flipud(H)
+    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+    plt.pcolormesh(xedges,yedges,Hmasked, cmap="Blues")
+    cb = plt.colorbar()
+    cb.set_label('counts in bin')
+
+
+    # plt.ylim([-1, 1.5])
+    # plt.xlim([-1, 1.5])
+    #
+    # plt.xlim([0, 1])
+    # plt.ylim([0, 1])
+
+
+
+    # plt.axis('off')
+
+    plt.savefig("tmp_fig_inhis_"+name + ".png", bbox_inches='tight')
+    plt.clf()
+
+    from scipy.stats import gaussian_kde
+
+    # bins = np.linspace(0.02, 0.74, 200)
+    bins = np.linspace(0.0,1.0, 200)
+    gaussian_kernel = gaussian_kde(X)
+    values = gaussian_kernel(bins)
+    plt.plot(bins, values, "k", linewidth=1.0)
+    plt.savefig("tmp_fig_kde_"+name + ".png")
+
 
     return
 
+
 if __name__ == "__main__":
     main()
-
-

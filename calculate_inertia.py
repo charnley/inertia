@@ -1,18 +1,16 @@
 
-import rmsd
-
+import gzip
 import sys
 
-import gzip
+import matplotlib.pyplot as plt
 import numpy as np
-import cheminfo
+import numpy.linalg as linalg
+import rmsd
 
+import cheminfo
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
 
-import matplotlib.pyplot as plt
-
-import numpy.linalg as linalg
 
 def center_of_mass(atoms, coordinates):
 
@@ -114,6 +112,8 @@ def get_ratio(inertia):
 
     inertia.sort()
 
+    # s = inertia.sum()
+
     ratio = np.zeros(2)
     ratio[0] = inertia[0]/inertia[2]
     ratio[1] = inertia[1]/inertia[2]
@@ -189,15 +189,9 @@ def clear_molobj(molobj, add_hydrogens=True, optimize=False):
     return molobj
 
 
-def parse_molobj(molobj, optimize=False, add_hydrogens=True):
+def parse_molobj(molobj):
 
     atoms, coordinates = cheminfo.molobj_to_xyz(molobj)
-
-    # dxyz = rmsd.set_coordinates([str(atom) for atom in atoms], coordinates)
-    # f = open("dump.xyz", 'a+')
-    # f.write(dxyz)
-    # f.write("\n")
-    # f.close()
 
     inertia = get_inertia(atoms, coordinates)
 
@@ -444,8 +438,9 @@ def main():
 
         result = [fmt.format(x) for x in result]
 
+        print(*result)
+
     return
 
 if __name__ == "__main__":
     main()
-

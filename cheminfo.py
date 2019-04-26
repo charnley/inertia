@@ -4,8 +4,8 @@ Module for chemical informatic tasks
 
 """
 
-from io import StringIO
 import sys
+from io import StringIO
 
 import numpy as np
 
